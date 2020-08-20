@@ -3,7 +3,7 @@ import io
 import struct
 from enum import Enum, auto
 from functools import partial
-from typing import BinaryIO, Union
+import typing
 from collections import OrderedDict
 import logging
 
@@ -31,7 +31,7 @@ class BareType(Enum):
     Array = auto()
     ArrayFixed = auto()
     Map = auto()
-    TaggedUnion = auto()
+    Union = auto()
     Struct = auto()
     UserType = auto()
 
@@ -49,73 +49,157 @@ primitive_types = {
     BareType.F64: (partial(struct.pack, '<d'), partial(struct.unpack, '<d'), float, 8),
     BareType.Bool: (partial(struct.pack, '<?'), partial(struct.unpack, '<?'), bool, 1),
     BareType.String: (None, None, str),
-    BareType.Data:   (None, None, bytes)
+    BareType.Data:   (None, None, bytes),
+    BareType.Void: (lambda x: None, lambda x: None, None) # No OP
     #(BareType.UINT, None, None, int),
     #(BareType.INT, None, None, int),
 }
 
-def _write_primitive(fp: BinaryIO, obj, type: BareType):
-    # call the primitive type's dump functions. This is probably a struct.pack partial
-    fp.write(primitive_types[type][0](obj))
+def _write_string(fp: typing.BinaryIO, val: str):
+    encoded = val.encode(encoding='utf-8') # utf-8 is the default, but doing this for clarity
+    _write_varint(fp, len(encoded), signed=False)
+    fp.write(encoded)
 
 
-def _write_varint(fp: BinaryIO, val: int, signed=True):
+def _write_varint(fp: typing.BinaryIO, val: int, signed=True):
     if isinstance(val, float):
         logger.warning("Casting %d to int, possible loss of precision", val)
         val = int(val)
-    if obj < 0 and not signed:
+    if val < 0 and not signed:
         raise ValueError("Attempting to write a signed number as unsigned.")
     if signed:
         val = val * 2
         if val < 0:
             val ^= val
-    while val >= 0x80:
-        fp.write(val | 0x80)
+    while True:
+        fp.write(struct.pack('<B', (val & 0xff) | 0x80))
         val >>= 7
+        if val <= 0x80:
+            break
 
-def _read_primitive(fp: BinaryIO, type: BareType):
-    # TODO: implement this
-    fp.read()
+class Field(ABC):
+    """
+    Field is a descritor that wraps a value, a BARE type, and some other
+    metadata. It implements a `pack` method which writes the corresponding
+    bytes for `type` to a provided file-like object.
+    """
 
+    _type = BareType.Void
+    _value = None
 
-class BareObject(ABC):
-    # key: field name, value: field type
-    _fields = OrderedDict()
+    def __init__(self, value=None, optional=False):
+        if value is None:
+            value = self.__class__._value
+        self._value = value
+        self._optional = optional
 
     @property
-    def fields() -> typing.OrderedDict[str, BareType]:
-        return self._fields
+    def type(self):
+        return self.__class__._type
 
-    def pack(self, fp=None) -> bytes:
+    @property
+    def value(self):
+        return self._value
+
+    def pack(self, fp=None) -> typing.Optional[bytes]:
+        buffered = False
         if not fp:
             fp = io.BytesIO()
-        for field, type in self.fields.items():
-                dump(fp, field)
+            buffered = True
+        _dump(fp, self)
+        if buffered:
+            return fp
 
     @classmethod
-    def unpack(cls, data: Union[BinaryIO, bytes]):
+    def unpack(cls, fp: typing.Union[typing.BinaryIO, bytes]) -> 'Field':
+        # If it's a bytes-like, wrap it in a io buffer
+        if hasattr(fp, 'decode'):
+            fp = io.BytesIO(fp)
+        if primitive_types.get(cls._type) is not None:
+            value = primitive_types.get(cls._type)[1](fp)
+            return cls(cls._type, value)
+
+class Int(Field):
+
+    _type = BareType.INT
+    _value = 0
+
+class Str(Field):
+
+    _type = BareType.String
+    _value = ""
+
+class U8(Field):
+
+    _type = BareType.U8
+    _value = 0
+
+class Struct(ABC):
+
+    _type = BareType.Struct
+
+    def __init__(self, *args, **kwargs):
+        # loop through defined fields, if they have a corresponding kwarg entry, set the value
+        for name, field in filter(lambda x: isinstance(x[1], Field), self.__class__.__dict__.items()):
+            if name in kwargs:
+                setattr(self, name, kwargs[name])
+            else:
+                setattr(self, name, field.value)
+
+    @property
+    def fields(self) -> typing.OrderedDict[str, Field]:
+        return OrderedDict(filter(lambda x: isinstance(x[1], Field), self.__class__.__dict__.items()))
+
+    def pack(self, fp=None) -> bytes:
+        ret = False
+        if not fp:
+            fp = io.BytesIO()
+            ret = True
+        for field, type in self.fields.items():
+            _dump(fp, type, getattr(self, field))
+        if ret:
+            return fp.getvalue()
+
+    @classmethod
+    def unpack(cls, data: typing.Union[typing.BinaryIO, bytes]):
         """
         unpack deserializes data into a type. If
         """
+        if hasattr(data, 'decode'):
+            fp = io.BytesIO(data)
+        else:
+            fp = data
+        for field, type in self.fields.items():
+            _load(fp, type, getattr(self, field))
         raise NotImplementedError("This hasn't been implemented yet")
 
-class BareUnion(ABC):
+class Union(ABC):
 
-    _members: List[BareObject] = []
+    _members: typing.Tuple[typing.Union[Field, Struct],...] = ()
 
     @property
-    def members() -> List[BareObject]:
-        return self._members
+    def members(self) -> typing.Tuple[typing.Union[Field, Struct], ...]:
+        return self.__class__._members
 
-def _dump(fp, obj, type: BareType):
-    if type is not BareType:
-        raise ValueError("Cannot dump non BareType")
-    if primitive_types.get(type) is not None:
-        # it's primitive, use the stored struct.pack method
-        fp.write(primitive_types.get(type)[0](obj))
-    elif type in (BareType.INT, BareType.UINT):
-        _write_primitive(fp, obj, type, signed=type==BareType.INT)
-    elif type is BareType.Union:
+class Map(ABC):
+
+    _key: Field=None
+    _value: Field=None
+
+def _dump(fp, field: Field, val):
+    if not isinstance(field, Field):
+        raise ValueError(f"Cannot dump non bare.Field: type: {type(val)}")
+    if field.type == BareType.String:
+        _write_string(fp, val)
+    elif field.type in (BareType.INT, BareType.UINT):
+        _write_varint(fp, val, signed=field.type==BareType.INT)
+    elif field.type == BareType.Union:
         # must be a composite type, do compisitey things
-        type = next((x for x in )) # TODO: resume here, need UnionType, instance object
+        #type = next((x for x in )) # TODO: resume here, need UnionType, instance object
+        pass
+    elif primitive_types.get(field.type) is not None:
+        # it's primitive, use the stored struct.pack method
+        fp.write(primitive_types.get(field.type)[0](val))
 
+def _load(fp, fields: Field):
+    pass
