@@ -37,6 +37,5 @@ def test_example_struct():
     assert ex3.testint == ex.testint
     assert ex3.testint == ex.testint
     assert ex3.m == ex.m
-    breakpoint()
 
 
