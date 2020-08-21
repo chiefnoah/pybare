@@ -1,0 +1,8 @@
+image: alpine/latest
+packages:
+  - python3
+  - py3-pytest
+tasks:
+  - test: |
+     cd pybare
+     pytest .
