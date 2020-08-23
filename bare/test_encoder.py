@@ -5,6 +5,8 @@ from .encoder import Struct, Map, Array, _ValidatedMap, ValidationError, Optiona
 from collections import OrderedDict
 import pytest
 import enum
+import io
+import os
 
 
 class Nested(Struct):
@@ -119,7 +121,6 @@ class UnionTest(Struct):
     e = ExampleUnion()
     b = Union(members=(Str, Int))
     c = Union(members=(OptionalStruct,ArrayTest))
-
 def test_union():
     ex = UnionTest(e=1, b="test", c=ArrayTest(a=[1], n=[Nested(s='s')])) # MUST specify values for union types when creating an object
     assert ex.e == 1
@@ -147,3 +148,64 @@ def test_enum():
     assert ex.e == 0
     with pytest.raises(ValidationError):
         ex.e = 100
+
+
+class PublicKey(DataFixed):
+    _length = 128
+
+class Time(Str):
+    pass
+
+class Department(enum.Enum):
+    ACCOUNTING = 0
+    ADMINISTRATION = 1
+    CUSTOMER_SERVICE = 2
+    DEVELOPMENT = 3
+
+    JSMITH = 99
+
+class Address(Struct):
+    address = Array(Str, length=4)
+    city = Str()
+    state = Str()
+    country = Str()
+
+class Order(Struct):
+    orderID = I64()
+    quantity = I32()
+
+class Customer(Struct):
+    name = Str()
+    email = Str()
+    address = Address()
+    orders = Array(Order)
+    metadata: Map(Str, Data)
+
+class Employee(Struct):
+    name = Str()
+    email = Str()
+    address = Address()
+    department = Enum(Department)
+    hireDate = Time()
+    publicKey = Optional(PublicKey)
+    metadata = Map(Str, Data)
+
+class TerminatedEmployee(Void):
+    pass
+
+class Person(Union):
+    _members = (Customer, Employee, TerminatedEmployee)
+
+@pytest.mark.parametrize('file', ['customer.bin', 'employee.bin', 'people.bin', 'terminated.bin'])
+def test_people(file):
+    with open(os.path.join(os.path.dirname(__file__), '_examples', file), 'br') as f:
+        p = Person().unpack(f)
+        p.to_dict()
+        f.seek(0)
+        f = f.read()
+        buf = io.BytesIO()
+        p.pack(buf)
+        #assert buf.getvalue() == f
+    with open('./test.bin', 'bw') as f:
+        p.pack(fp=f)
+

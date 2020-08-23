@@ -96,7 +96,7 @@ class Field(ABC):
         valid, message = self.validate(value)
         if not valid:
             raise ValidationError(
-                f"value is invalid for BARE type {self._type}: {message}"
+                f"value is invalid for BARE type {self._type.__class__.__name__}: {message}"
             )
         setattr(instance, f"_{self.name}", value)
 
@@ -107,6 +107,10 @@ class Field(ABC):
         and an optional message for why
         """
         return self.__class__._default == None  # This is valid for BareType.Void
+
+    @property
+    def valid(self) -> typing.Tuple[bool, str]:
+        return self.validate(self._value)
 
     @property
     def type(self):
@@ -126,9 +130,8 @@ class Field(ABC):
     def _pack(self, fp, value=None):
         pass
 
-    @classmethod
     @abstractmethod
-    def _unpack(cls, fp: typing.BinaryIO) -> "Field":
+    def _unpack(self, fp: typing.BinaryIO) -> "Field":
         pass
 
     def pack(self, fp=None) -> typing.Optional[bytes]:
@@ -140,20 +143,26 @@ class Field(ABC):
         if buffered:
             return fp
 
-    @classmethod
-    def unpack(cls, fp: typing.BinaryIO):
+    def unpack(self, fp: typing.BinaryIO):
         # If it's a bytes-like, wrap it in a io buffer
         if hasattr(fp, "decode"):
             fp = io.BytesIO(fp)
-        return cls._unpack(fp)
+        return self._unpack(fp)
+
+    def to_dict(self, value=None):
+        if value is None:
+            value = self._value
+        if isinstance(self._value, Field):
+            return self._value.value
+        else:
+            return self._value
 
 
 class Struct(ABC):
 
     _type = BareType.Struct
 
-    def __init__(self, *args, optional=False, **kwargs):
-        self._optional = optional
+    def __init__(self, *args, **kwargs):
         # loop through defined fields, if they have a corresponding kwarg entry, set the value
         for name, field in filter(
             lambda x: isinstance(x[1], (Field, Struct)), self.__class__.__dict__.items()
@@ -187,17 +196,14 @@ class Struct(ABC):
         if value is None:
             value = self
         for field, type in value.fields().items():
-            val = getattr(self, field)  # this gets the underlying value
+            val = getattr(value, field)  # this gets the underlying value
             type._pack(fp, value=val)
 
     @classmethod
     def _unpack(cls, fp: typing.BinaryIO):
         vals = {}
         for field, type in cls.fields().items():
-            if isinstance(type, Array):
-                val = type._unpack(fp, length=type._length)
-            else:
-                val = type._unpack(fp)
+            val = type._unpack(fp)
             vals[field] = val.value
         return cls(**vals)
 
@@ -228,6 +234,22 @@ class Struct(ABC):
             return False, f"{type(s)} is not a valid struct {type(self)}"
         return True, None
 
+    @property
+    def valid(self) -> typing.Tuple[bool, str]:
+        for name, field in self.fields().items():
+            valid, message = field.validate(getattr(self, name))
+            if not valid:
+                return False, message
+        return True, None
+
+    def to_dict(self, value=None) -> dict:
+        if value is None:
+            value = self
+        output = {}
+        for name, field in self.fields().items():
+            val = getattr(self, name)
+            output[name] = field.to_dict(value=val)
+        return output
 
 class _ValidatedList(UserList):
     def __init__(self, *args, instance: "Array" = None, **kwargs):
@@ -239,7 +261,7 @@ class _ValidatedList(UserList):
         super().__init__(*args, **kwargs)
 
     def append(self, item):
-        valid, message = self._instance.validate(len(self.data) + 1, item)
+        valid, message = self._instance._validateitem(item, length=len(self.data) + 1)
         if not valid:
             raise ValidationError(message)
         self.data.append(item)
@@ -283,22 +305,27 @@ class Array(Field):
             self._length = length
         if values:
             self.validate(values)
-            self._value = values
+            self._value = _ValidatedList(values, instance=self)
         else:
-            self._value = []
+            self._value = _ValidatedList(instance=self)
 
-    def _validateitem(self, item) -> typing.Tuple[bool, str]:
+    def _validateitem(self, item, length=0) -> typing.Tuple[bool, str]:
+        if length > self._length:
+            return False, f"length {length} larger than array max: {self._length}"
         if self._length > 0 and len(self._value) + 1 > self._length:
             return False, "outside of length bounds"
         return self._type.validate(item)
 
     def validate(self, items: typing.Collection) -> typing.Tuple[bool, str]:
         if self._length > 0 and len(items) > self._length:
-            return False, f"lenth {len(items)} larger than array max: {cls._length}"
+            return False, f"lenth {len(items)} larger than array max: {self._length}"
         if self._length > 0 and len(items) > self._length:
             return False, f"length {len(items)} greater than max length {self._length}"
         for item in items:
-            valid, message = self._type.validate(item)
+            if type(item) == type(self._type):
+                valid, message = item.valid
+            else:
+                valid, message = self._type.validate(item)
             if not valid:
                 return False, message
         return True, None
@@ -306,20 +333,24 @@ class Array(Field):
     def _pack(self, fp: typing.BinaryIO, value=None):
         if value is None:
             value = self._value
-        if self.__class__._length == 0:
+        if self._length == 0:
             length = len(value)
             _write_varint(fp, length, signed=False)
         else:
-            length = self.__class__.__length
-            value = value.extend([self._type._default] * (length - len(value))) # pad with default values
+            default = None
+            if isinstance(self._type, Field):
+                default = self._type._default
+            elif isinstance(self._type, Struct):
+                default = self._type.__class__()
+            value.extend([default] * (self._length - len(value))) # pad with default values
         for item in value:
-            self._type._pack(fp, item)
+            self._type._pack(fp, item.value)
 
-    def _unpack(self, fp: typing.BinaryIO, length=None) -> 'Array':
-        if length is None:
-            length = cls._length
-        if length == 0:
+    def _unpack(self, fp: typing.BinaryIO) -> 'Array':
+        if self._length == 0:
             length = _read_varint(fp, signed=False)
+        else:
+            length = self._length
         values = []
         for _ in range(length):
             val = self._type._unpack(fp)
@@ -424,15 +455,14 @@ class Map(Field):
             self._keytype._pack(fp, value=k)
             self._valuetype._pack(fp, value=v)
 
-    @classmethod
-    def _unpack(cls, fp: typing.BinaryIO) -> "Map":
+    def _unpack(self, fp: typing.BinaryIO) -> "Map":
         count = _read_varint(fp, signed=False)
         values = {}
         for _ in range(count):
-            key = cls._keytype._unpack(fp)
-            value = cls._valuetype.unpack(fp)
+            key = self._keytype._unpack(fp)
+            value = self._valuetype.unpack(fp)
             values[key] = value
-        return cls(key=cls._keytype, value=cls._valuetype, values=values)
+        return self.__class__(key=self._keytype, value=self._valuetype, values=values)
 
 
 class Optional(Field):
@@ -496,6 +526,10 @@ class Union(Field):
                 self._members.append(member(value=value))
             else:
                 self._members.append(member)
+        if value is not None:
+            valid, message = self.validate(value)
+            if not valid:
+                raise ValidationError(f"Attempting to set incorrect value to Union type: {type(value)}")
         self._value = value
 
     @property
@@ -531,9 +565,14 @@ class Union(Field):
         raise TypeError("Unable to determine Union member type for value.")
 
     def _unpack(self, fp: typing.BinaryIO):
-        id = _read_varint(fp, signed=False)
-        value = self._members[id]._unpack(fp)
-        return self.__class__(value=self._members[id].__class__(value=value.value))
+        uid = _read_varint(fp, signed=False)
+        value = self._members[uid]._unpack(fp)
+        return self.__class__(members=self._members, value=value)
+
+    def to_dict(self, value=None):
+        if value is None:
+            value = self._value
+        return value.to_dict()
 
 
 def _write_string(fp: typing.BinaryIO, val: str):

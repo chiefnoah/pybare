@@ -22,10 +22,9 @@ class Simple(Field):
             value = self._value
         fp.write(struct.pack(self.__class__._fmt, value))
 
-    @classmethod
-    def _unpack(cls, fp: typing.BinaryIO):
-        buf = fp.read(cls._bytesize)
-        return cls(value=(struct.unpack(cls._fmt, buf)[0]))
+    def _unpack(self, fp: typing.BinaryIO):
+        buf = fp.read(self._bytesize)
+        return self.__class__(value=(struct.unpack(self._fmt, buf)[0]))
 
 
 class U8(Simple):
@@ -212,9 +211,8 @@ class Void(Field):
     def _pack(self, fp: typing.BinaryIO, value=None):
         pass  # NO OP
 
-    @classmethod
-    def _unpack(cls, fp: typing.BinaryIO):
-        return cls(value=None)
+    def _unpack(self, fp: typing.BinaryIO):
+        return self.__class__(value=None)
 
     def validate(self, value):
         if value is not None:
@@ -237,10 +235,9 @@ class Int(Field):
             value = self._value
         _write_varint(fp, value, signed=True)
 
-    @classmethod
-    def _unpack(cls, fp: typing.BinaryIO) -> "Int":
+    def _unpack(self, fp: typing.BinaryIO) -> "Int":
         val = _read_varint(fp, signed=True)
-        return cls(value=val)
+        return self.__class__(value=val)
 
 class UInt(Field):
 
@@ -259,10 +256,9 @@ class UInt(Field):
             value = self._value
         _write_varint(fp, value, signed=False)
 
-    @classmethod
-    def _unpack(cls, fp: typing.BinaryIO) -> "UInt":
+    def _unpack(self, fp: typing.BinaryIO) -> "UInt":
         val = _read_varint(fp, signed=False)
-        return cls(value=val)
+        return self.__class__(value=val)
 
 
 class Str(Field):
@@ -280,10 +276,9 @@ class Str(Field):
             value = self._value
         _write_string(fp, value)
 
-    @classmethod
-    def _unpack(cls, fp: typing.BinaryIO) -> "Str":
+    def _unpack(self, fp: typing.BinaryIO) -> "Str":
         val = _read_string(fp)
-        return cls(value=val)
+        return self.__class__(value=val)
 
 
 class Data(Field):
@@ -306,11 +301,10 @@ class Data(Field):
         _write_varint(fp, val=length, signed=False)
         fp.write(fp.write(struct.pack(f"<{len(value)}s", value)))
 
-    @classmethod
-    def _unpack(cls, fp: typing.BinaryIO) -> "Data":
+    def _unpack(self, fp: typing.BinaryIO) -> "Data":
         length = _read_varint(fp, signed=False)
         val = struct.unpack("<{length}s", fp)[0]
-        return cls(value=val)
+        return self.__class__(value=val)
 
 
 class DataFixed(Field):
@@ -344,12 +338,11 @@ class DataFixed(Field):
             value = self._value
         fp.write(struct.pack(f"<{self._length}s", value))
 
-    @classmethod
-    def _unpack(cls, fp: typing.BinaryIO, length=None) -> "DataFixed":
+    def _unpack(self, fp: typing.BinaryIO, length=None) -> "DataFixed":
         if length is None:
-            length = cls._length
+            length = self._length
         val = struct.unpack(f"<{length}s", fp)[0]
-        return cls(value=val)
+        return self.__class__(value=val)
 
 class Enum(UInt):
 
@@ -366,3 +359,7 @@ class Enum(UInt):
         if value not in values:
             return False, f"value {value} is not a valid Enum type for {self.__class__.__name__}"
         return True, None
+
+    def _unpack(self, fp: typing.BinaryIO) -> 'UInt':
+        val = _read_varint(fp, signed=False)
+        return self.__class__(self._enum, val)
