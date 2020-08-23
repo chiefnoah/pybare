@@ -344,7 +344,10 @@ class Array(Field):
                 default = self._type.__class__()
             value.extend([default] * (self._length - len(value))) # pad with default values
         for item in value:
-            self._type._pack(fp, item.value)
+            if isinstance(item, Field):
+                self._type._pack(fp, item.value)
+            else:
+                self._type._pack(fp, item)
 
     def _unpack(self, fp: typing.BinaryIO) -> 'Array':
         if self._length == 0:
