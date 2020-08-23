@@ -164,9 +164,7 @@ class Struct(ABC):
 
     def __init__(self, *args, **kwargs):
         # loop through defined fields, if they have a corresponding kwarg entry, set the value
-        for name, field in filter(
-            lambda x: isinstance(x[1], (Field, Struct)), self.__class__.__dict__.items()
-        ):
+        for name, field in self.fields().items():
             if name in kwargs:
                 setattr(self, name, kwargs[name])
             else:
@@ -558,7 +556,7 @@ class Union(Field):
             else:
                 self._members.append(member)
         if value is not None:
-            valid, message = self.validate(value)
+            valid, _ = self.validate(value)
             if not valid:
                 raise ValidationError(
                     f"Attempting to set incorrect value to Union type: {type(value)}"
@@ -641,7 +639,7 @@ def _read_varint(fp: typing.BinaryIO, signed=True) -> int:
     while True:
         try:
             b = fp.read(1)[0]
-        except IndexError as e:
+        except IndexError:
             raise RuntimeError("Not enough bytes in buffer to decode")
         if b < 0x80:
             value = output | b << offset

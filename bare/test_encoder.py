@@ -7,6 +7,7 @@ import pytest
 import enum
 import io
 import os
+import inspect
 
 
 class Nested(Struct):
@@ -39,6 +40,14 @@ def test_example_struct():
     assert ex.testint == 11
     assert ex.teststr == "a test"
 
+class C():
+    s = Str()
+
+def test_assign_value():
+    o = C()
+    o.s = "some string"
+    assert getattr(o, 's') == 'some string'
+    assert isinstance(inspect.getmembers(C)[-1][1], Str)
 
 class ExampleMap(Map):
     _keytype = Str
@@ -68,9 +77,9 @@ def test_map():
         ex.m2 = {"test": "test"}
     with pytest.raises(ValidationError):
         ex.m3["3"] = 3
-    map = Map(Str(), Str(), values={"test": "test"})
+    map = Map(Str(), Str(), value={"test": "test"})
     assert map.value["test"] == "test"
-    map2 = Map(Str(), Str())
+    map2 = Map(Str, Str)
     map2.value["another"] = "test"
     assert map2.value["another"] == "test"
 
