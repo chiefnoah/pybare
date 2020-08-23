@@ -1,2 +1,6 @@
 .env
 **/__pycache__
+build/
+dist/
+pybare.egg-info/
+.vim
