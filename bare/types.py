@@ -1,3 +1,6 @@
+"""
+bare.types contains primitive types
+"""
 from .encoder import (
     Field,
     BareType,
@@ -351,10 +354,15 @@ class DataFixed(Field):
 
 class Enum(UInt):
     def __init__(self, enum, *args, **kwargs):
+        """Enum defines a BARE enum type
+
+        Validate checks whether the provided value is an `int` and a valid enum member
+        :param enum (`enum.Enum`): a standard `Enum` type. Values for enum members *must* be positive ints
+        """
         self._enum = enum
         super().__init__(*args, **kwargs)
 
-    def validate(self, value):
+    def validate(self, value) -> ValidationMessage:
         if not isinstance(value, int):
             return False, f"type: {type(value)} is not valid for Enum, must be <int>"
         if value < 0:

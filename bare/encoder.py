@@ -12,6 +12,10 @@ from collections import UserDict, UserList
 
 
 class ValidationError(ValueError):
+    """
+    ValidationError is an error raised by a `Field` type when the `validate` class function
+    determines a given value is 'out-of-spec'.
+    """
     pass
 
 
