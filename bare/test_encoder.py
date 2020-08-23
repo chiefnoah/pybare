@@ -205,7 +205,12 @@ def test_people(file):
         f = f.read()
         buf = io.BytesIO()
         p.pack(buf)
-        #assert buf.getvalue() == f
+        assert buf.getvalue() == f
+
+def test_stream():
+    with open(os.path.join(os.path.dirname(__file__), '_examples', 'people.bin'), 'br') as f:
+        p = Person().unpack(f)
+        buf = io.BytesIO()
+        p.pack(buf)
     with open('./test.bin', 'bw') as f:
         p.pack(fp=f)
-

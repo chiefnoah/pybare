@@ -141,7 +141,7 @@ class Field(ABC):
             buffered = True
         self._pack(fp)
         if buffered:
-            return fp
+            return fp.getvalue()
 
     def unpack(self, fp: typing.BinaryIO):
         # If it's a bytes-like, wrap it in a io buffer
@@ -621,57 +621,3 @@ def _read_varint(fp: typing.BinaryIO, signed=True) -> int:
         output |= (b & 0x7F) << offset
         offset += 7
 
-
-def _dump(fp, field: "Field", val):
-    if not isinstance(field, (Field, Struct, Map, Map)):
-        raise ValueError(f"Cannot dump non bare.Field: type: {type(val)}")
-    if field._type == BareType.String:
-        _write_string(fp, val)
-    elif field._type in (BareType.INT, BareType.UINT):
-        _write_varint(fp, val, signed=field._type == BareType.INT)
-    elif field._type == BareType.Union:
-        # must be a composite type, do compisitey things
-        # type = next((x for x in )) # TODO: resume here, need UnionType, instance object
-        pass
-    elif field._type == BareType.Map:
-        if not isinstance(val, Mapping):
-            raise TypeError(f"You can't to write type {type(val)} as BareType.Map")
-        length = len(val)
-        # Write the number of elements as a UINT
-        _write_varint(fp, length, signed=False)
-        # followed by each key/value pair concatenatedA
-        for k, v in val.items():
-            _dump(fp, field.__class__._key, k)
-            _dump(fp, field.__class__._value, v)
-
-    elif primitive_types.get(field._type) is not None:
-        # it's primitive, use the stored struct.pack method
-        b = primitive_types.get(field._type)[0](val)
-        fp.write(b)
-
-
-def _load(fp, field: typing.Union[Field, typing.Type[Struct], Map]):
-    # if not isinstance(field, (Field, Struct, Map, Optional)):
-    #    raise ValueError(f"Cannot decode into a non bare.Field type: {field}")
-    if field._type == BareType.Struct:
-        values = {}
-        for name, baretype in field.fields().items():
-            values[name] = _load(fp, baretype)
-        return field(**values)
-    elif field.type == BareType.String:
-        return _read_string(fp)
-    elif field.type in (BareType.INT, BareType.UINT):
-        return _read_varint(fp, signed=field.type == BareType.INT)
-    elif field.type == BareType.Map:
-        count = _read_varint(fp, signed=False)
-        output = OrderedDict()
-        for _ in range(count):
-            key = _load(fp, field.__class__._key)
-            val = _load(fp, field.__class__._value)
-            output[key] = val
-        return output
-    elif primitive_types.get(field.type) is not None:
-        format = primitive_types.get(field.type)[1]
-        size = struct.calcsize(format)
-        buf = fp.read(size)
-        return struct.unpack(format, buf)[0]
