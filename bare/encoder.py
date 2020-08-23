@@ -152,10 +152,10 @@ class Field(ABC):
     def to_dict(self, value=None):
         if value is None:
             value = self._value
-        if isinstance(self._value, Field):
-            return self._value.value
+        if isinstance(value, Field):
+            return value.value
         else:
-            return self._value
+            return value
 
 
 class Struct(ABC):
@@ -195,9 +195,9 @@ class Struct(ABC):
     def _pack(self, fp: typing.BinaryIO, value=None):
         if value is None:
             value = self
-        for field, type in value.fields().items():
-            val = getattr(value, field)  # this gets the underlying value
-            type._pack(fp, value=val)
+        for name, field in value.fields().items():
+            val = getattr(value, name)  # this gets the underlying value
+            field._pack(fp, value=val)
 
     @classmethod
     def _unpack(cls, fp: typing.BinaryIO):
@@ -246,8 +246,8 @@ class Struct(ABC):
         if value is None:
             value = self
         output = {}
-        for name, field in self.fields().items():
-            val = getattr(self, name)
+        for name, field in value.fields().items():
+            val = getattr(value, name)
             output[name] = field.to_dict(value=val)
         return output
 
@@ -360,6 +360,19 @@ class Array(Field):
             values.append(val)
         return self.__class__(type=self._type, length=self._length, values=values)
 
+    def to_dict(self, value=None):
+        if value is None:
+            value = self._value
+        output = []
+
+        for item in value:
+            if isinstance(item, (Struct, Field)):
+                output.append(item.to_dict())
+            else:
+                output.append(item)
+        return output
+
+
 class _ValidatedMap(UserDict):
     def __init__(self, *args, instance: "Map" = None, **kwargs):
         if instance is None:
@@ -388,37 +401,37 @@ class Map(Field):
     _valuetype: typing.Type[Field] = None
     _default = None
 
-    def __init__(self, key: Field = None, value: Field = None, values=None):
-        if key is not None:
-            if inspect.isclass(key):
-                self._keytype = key()
+    def __init__(self, keytype: Field = None, valuetype: Field = None, value=None):
+        if keytype is not None:
+            if inspect.isclass(keytype):
+                self._keytype = keytype()
             else:
-                self._keytype = key
+                self._keytype = keytype
         elif self.__class__._keytype is None:
             raise TypeError(
-                "Must either specify key as an argument to init or  _keytype class field"
+                "Must either specify keytype as an argument to init or  _keytype class field"
             )
         else:
             self._keytype = self.__class__._keytype()
-        if value is not None:
-            if inspect.isclass(value):
-                self._valuetype = value()
+        if valuetype is not None:
+            if inspect.isclass(valuetype):
+                self._valuetype = valuetype()
             else:
-                self._valuetype = value
+                self._valuetype = valuetype
         elif self.__class__._valuetype is None:
             raise TypeError(
-                "Must either specify value as an argument to init or  _valuetype class field"
+                "Must either specify valuetype as an argument to init or  _valuetype class field"
             )
         else:
             self._valuetype = self.__class__._valuetype()
-        if values:
-            for k, v in values.items():
+        if value:
+            for k, v in value.items():
                 valid, message = self._validatekv(k, v)
                 if not valid:
                     raise ValidationError(
                         f"Unable to assign value to key: {k}: {message}"
                     )
-        self._value = _ValidatedMap(values, instance=self)
+        self._value = _ValidatedMap(value, instance=self)
 
     def __set__(self, instance, value):
         if instance is None:
@@ -450,7 +463,7 @@ class Map(Field):
         return True, None
 
     def _pack(self, fp: typing.BinaryIO, value=None):
-        if value is not None:
+        if value is None:
             value = self._value  # type: _ValidatedMap
         count = len(value)
         _write_varint(fp, count, signed=False)
@@ -465,7 +478,18 @@ class Map(Field):
             key = self._keytype._unpack(fp)
             value = self._valuetype.unpack(fp)
             values[key] = value
-        return self.__class__(key=self._keytype, value=self._valuetype, values=values)
+        return self.__class__(keytype=self._keytype, valuetype=self._valuetype, value=values)
+
+    def to_dict(self, value=None):
+        if value is None:
+            value = self._value
+        output = {}
+        for k, v in value.items():
+            if isinstance(v, (Field, Struct)):
+                k = v.to_dict()
+            else:
+                output[k] = v
+        return output
 
 
 class Optional(Field):
@@ -505,14 +529,15 @@ class Optional(Field):
             value = self._value
         if value is None:
             fp.write(struct.pack('<B', 0))
-        self._wrapped._pack(fp, value=value)
+        else:
+            fp.write(struct.pack('<B', 1))
+            self._wrapped._pack(fp, value=value)
 
     def _unpack(self, fp: typing.BinaryIO) -> 'Optional':
         buf = fp.read(1)
         check = struct.unpack('<B', buf)[0]
         if check == 0:
             return self.__class__(wrapped=self._wrapped, value=None)
-        fp.seek(-1)
         value = self._wrapped._unpack(fp)
         return self.__class__(wrapped=self._wrapped, value=value)
 
@@ -609,7 +634,10 @@ def _read_varint(fp: typing.BinaryIO, signed=True) -> int:
     output = 0
     offset = 0
     while True:
-        b = fp.read(1)[0]
+        try:
+            b = fp.read(1)[0]
+        except IndexError as e:
+            raise RuntimeError("Not enough bytes in buffer to decode")
         if b < 0x80:
             value = output | b << offset
             if signed:
