@@ -239,6 +239,7 @@ class Int(Field):
         val = _read_varint(fp, signed=True)
         return self.__class__(value=val)
 
+
 class UInt(Field):
 
     _type = BareType.UINT
@@ -248,7 +249,10 @@ class UInt(Field):
         if not isinstance(value, int):
             return False, f"type: {type(value)} must be <int>"
         if value < 0:
-            return False, f"value: {value} is outside of valid range for this type: {self.__class__._type}",
+            return (
+                False,
+                f"value: {value} is outside of valid range for this type: {self.__class__._type}",
+            )
         return True, None
 
     def _pack(self, fp: typing.BinaryIO, value=None):
@@ -344,8 +348,8 @@ class DataFixed(Field):
         val = struct.unpack(f"<{length}s", fp)[0]
         return self.__class__(value=val)
 
-class Enum(UInt):
 
+class Enum(UInt):
     def __init__(self, enum, *args, **kwargs):
         self._enum = enum
         super().__init__(*args, **kwargs)
@@ -354,12 +358,18 @@ class Enum(UInt):
         if not isinstance(value, int):
             return False, f"type: {type(value)} is not valid for Enum, must be <int>"
         if value < 0:
-            return False, f"value is not a valid value for Enum {self.__class__.__name__}"
+            return (
+                False,
+                f"value is not a valid value for Enum {self.__class__.__name__}",
+            )
         values = set(item.value for item in self._enum.__members__.values())
         if value not in values:
-            return False, f"value {value} is not a valid Enum type for {self.__class__.__name__}"
+            return (
+                False,
+                f"value {value} is not a valid Enum type for {self.__class__.__name__}",
+            )
         return True, None
 
-    def _unpack(self, fp: typing.BinaryIO) -> 'UInt':
+    def _unpack(self, fp: typing.BinaryIO) -> "UInt":
         val = _read_varint(fp, signed=False)
         return self.__class__(self._enum, val)

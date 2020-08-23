@@ -207,7 +207,6 @@ class Struct(ABC):
             vals[field] = val.value
         return cls(**vals)
 
-
     @classmethod
     def unpack(cls, data: typing.Union[typing.BinaryIO, bytes]):
         """
@@ -251,6 +250,7 @@ class Struct(ABC):
             output[name] = field.to_dict(value=val)
         return output
 
+
 class _ValidatedList(UserList):
     def __init__(self, *args, instance: "Array" = None, **kwargs):
         if instance is None:
@@ -284,9 +284,7 @@ class Array(Field):
     _length = 0  # zero means variable length
     _default = None
 
-    def __init__(
-        self, type: typing.Type[Field] = None, length=0, values=None
-    ):
+    def __init__(self, type: typing.Type[Field] = None, length=0, values=None):
         if type is not None:
             if inspect.isclass(type):
                 self._type = type()
@@ -342,14 +340,16 @@ class Array(Field):
                 default = self._type._default
             elif isinstance(self._type, Struct):
                 default = self._type.__class__()
-            value.extend([default] * (self._length - len(value))) # pad with default values
+            value.extend(
+                [default] * (self._length - len(value))
+            )  # pad with default values
         for item in value:
             if isinstance(item, Field):
                 self._type._pack(fp, item.value)
             else:
                 self._type._pack(fp, item)
 
-    def _unpack(self, fp: typing.BinaryIO) -> 'Array':
+    def _unpack(self, fp: typing.BinaryIO) -> "Array":
         if self._length == 0:
             length = _read_varint(fp, signed=False)
         else:
@@ -478,7 +478,9 @@ class Map(Field):
             key = self._keytype._unpack(fp)
             value = self._valuetype.unpack(fp)
             values[key] = value
-        return self.__class__(keytype=self._keytype, valuetype=self._valuetype, value=values)
+        return self.__class__(
+            keytype=self._keytype, valuetype=self._valuetype, value=values
+        )
 
     def to_dict(self, value=None):
         if value is None:
@@ -528,18 +530,19 @@ class Optional(Field):
         if value is None:
             value = self._value
         if value is None:
-            fp.write(struct.pack('<B', 0))
+            fp.write(struct.pack("<B", 0))
         else:
-            fp.write(struct.pack('<B', 1))
+            fp.write(struct.pack("<B", 1))
             self._wrapped._pack(fp, value=value)
 
-    def _unpack(self, fp: typing.BinaryIO) -> 'Optional':
+    def _unpack(self, fp: typing.BinaryIO) -> "Optional":
         buf = fp.read(1)
-        check = struct.unpack('<B', buf)[0]
+        check = struct.unpack("<B", buf)[0]
         if check == 0:
             return self.__class__(wrapped=self._wrapped, value=None)
         value = self._wrapped._unpack(fp)
         return self.__class__(wrapped=self._wrapped, value=value)
+
 
 class Union(Field):
 
@@ -557,7 +560,9 @@ class Union(Field):
         if value is not None:
             valid, message = self.validate(value)
             if not valid:
-                raise ValidationError(f"Attempting to set incorrect value to Union type: {type(value)}")
+                raise ValidationError(
+                    f"Attempting to set incorrect value to Union type: {type(value)}"
+                )
         self._value = value
 
     @property
