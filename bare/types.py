@@ -1,28 +1,368 @@
-from .encoder import Field, BareType
+from .encoder import (
+    Field,
+    BareType,
+    _write_string,
+    _write_varint,
+    _read_string,
+    _read_varint,
+)
+import typing
+import struct
+from enum import IntEnum
+
+ValidationMessage = typing.Tuple[bool, str]
+
+
+class Simple(Field):
+    _fmt = None
+    _bytesize = 0
+
+    def _pack(self, fp: typing.BinaryIO, value=None):
+        if value is None:
+            value = self._value
+        fp.write(struct.pack(self.__class__._fmt, value))
+
+    @classmethod
+    def _unpack(cls, fp: typing.BinaryIO):
+        buf = fp.read(cls._bytesize)
+        return cls(value=(struct.unpack(cls._fmt, buf)[0]))
+
+
+class U8(Simple):
+
+    _type = BareType.U8
+    _default = 0
+    _fmt = "<B"
+    _bytesize = 1
+
+    def validate(self, value) -> ValidationMessage:
+        if not isinstance(value, int):
+            return False, f"type: {type(value)} must be <int>"
+        if value < 0 or value > 0xFFFF:
+            return (
+                False,
+                f"value: {value} is outside of valid range for this type: {self.__class__._type}",
+            )
+        return True, None
+
+
+class U16(Simple):
+    _type = BareType.U16
+    _default = 0
+    _fmt = "<H"
+    _bytesize = 2
+
+    def validate(self, value) -> ValidationMessage:
+        if not isinstance(value, int):
+            return False, f"type: {type(value)} must be <int>"
+        if value < 0 or value > 0xFFFFFFFF:
+            return (
+                False,
+                f"value: {value} is outside of valid range for this type: {self.__class__._type}",
+            )
+        return True, None
+
+
+class U32(Simple):
+    _type = BareType.U32
+    _default = 0
+    _fmt = "<I"
+    _bytesize = 4
+
+    def validate(self, value) -> ValidationMessage:
+        if not isinstance(value, int):
+            return False, f"type: {type(value)} must be <int>"
+        if value < 0 or value > 0xFFFFFFFF:
+            return (
+                False,
+                f"value: {value} is outside of valid range for this type: {self.__class__._type}",
+            )
+        return True, None
+
+
+class U64(Simple):
+
+    _type = BareType.U64
+    _default = 0
+    _fmt = "<Q"
+    _bytesize = 8
+
+    def validate(self, value) -> ValidationMessage:
+        if not isinstance(value, int):
+            return False, f"type: {type(value)} must be <int>"
+        if value < 0 or value > 0xFFFFFFFFFFFFFFFF:
+            return (
+                False,
+                f"value: {value} is outside of valid range for this type: {self.__class__._type}",
+            )
+        return True, None
+
+
+class I8(Simple):
+    _type = BareType.I8
+    _default = 0
+    _fmt = "<b"
+    _bytesize = 1
+
+    def validate(self, value) -> ValidationMessage:
+        if not isinstance(value, int):
+            return False, f"type: {type(value)} must be <int>"
+        if value < -128 or value > 127:
+            return (
+                False,
+                f"value: {value} is outside of valid range for this type: {self.__class__._type}",
+            )
+        return True, None
+
+
+class I16(Simple):
+    _type = BareType.I16
+    _default = 0
+    _fmt = "<h"
+    _bytesize = 2
+
+    @classmethod
+    def validate(self, value) -> ValidationMessage:
+        if not isinstance(value, int):
+            return False, f"type: {type(value)} must be <int>"
+        if value < -32768 or value > 32767:
+            return (
+                False,
+                f"value: {value} is outside of valid range for this type: {self.__class__._type}",
+            )
+        return True, None
+
+
+class I32(Simple):
+    _type = BareType.I32
+    _default = 0
+    _fmt = "<i"
+    _bytesize = 4
+
+    def validate(self, value) -> ValidationMessage:
+        if not isinstance(value, int):
+            return False, f"type: {type(value)} must be <int>"
+        if value < -2147483648 or value > 2147483647:
+            return (
+                False,
+                f"value: {value} is outside of valid range for this type: {self.__class__._type}",
+            )
+        return True, None
+
+
+class I64(Simple):
+    _type = BareType.I64
+    _default = 0
+    _fmt = "<q"
+    _bytesize = 8
+
+    def validate(self, value) -> ValidationMessage:
+        if not isinstance(value, int):
+            return False, f"type: {type(value)} must be <int>"
+        if value < -9223372036854775808 or value > 9223372036854775807:
+            return (
+                False,
+                f"value: {value} is outside of valid range for this type: {self.__class__._type}",
+            )
+        return True, None
+
+
+class F32(Simple):
+    _type = BareType.F32
+    _default = 0.0
+    _fmt = "<f"
+    _bytesize = 4
+
+    def validate(self, value) -> ValidationMessage:
+        if not isinstance(value, float):
+            return False, f"type: {type(value)} must be <int>"
+        return True, None
+
+
+class F64(Simple):
+    _type = BareType.F32
+    _default = 0.0
+    _fmt = "<d"
+    _bytesize = 8
+
+    def validate(self, value) -> ValidationMessage:
+        if not isinstance(value, float):
+            return False, f"type: {type(value)} must be <int>"
+        return True, None
+
+
+class Bool(Simple):
+    _type = BareType.Bool
+    _default = False
+    _fmt = "<?"
+    _bytesize = 1
+
+    def validate(self, value) -> ValidationMessage:
+        if not isinstance(value, bool):
+            return False, f"type: {type(value)} must be <int>"
+        return True, None
+
+
+class Void(Field):
+    _type = BareType.Void
+    _default = None
+    _fmt = None
+    _bytesize = 0
+
+    def _pack(self, fp: typing.BinaryIO, value=None):
+        pass  # NO OP
+
+    @classmethod
+    def _unpack(cls, fp: typing.BinaryIO):
+        return cls(value=None)
+
+    def validate(self, value):
+        if value is not None:
+            return False, f"type: {type(value)} must be <None>"
+        return True, None
+
 
 class Int(Field):
 
     _type = BareType.INT
     _default = 0
 
+    def validate(self, value) -> ValidationMessage:
+        if not isinstance(value, int):
+            return False, f"type: {type(value)} must be <int>"
+        return True, None
+
+    def _pack(self, fp: typing.BinaryIO, value=None):
+        if value is None:
+            value = self._value
+        _write_varint(fp, value, signed=True)
+
     @classmethod
-    def validate(cls, value):
-        return isinstance(value, int) # TODO: check whether within min/max allowed by 64-bit precision
+    def _unpack(cls, fp: typing.BinaryIO) -> "Int":
+        val = _read_varint(fp, signed=True)
+        return cls(value=val)
+
+class UInt(Field):
+
+    _type = BareType.UINT
+    _default = 0
+
+    def validate(self, value) -> ValidationMessage:
+        if not isinstance(value, int):
+            return False, f"type: {type(value)} must be <int>"
+        if value < 0:
+            return False, f"value: {value} is outside of valid range for this type: {self.__class__._type}",
+        return True, None
+
+    def _pack(self, fp: typing.BinaryIO, value=None):
+        if value is None:
+            value = self._value
+        _write_varint(fp, value, signed=False)
+
+    @classmethod
+    def _unpack(cls, fp: typing.BinaryIO) -> "UInt":
+        val = _read_varint(fp, signed=False)
+        return cls(value=val)
+
 
 class Str(Field):
 
     _type = BareType.String
     _default = ""
 
+    def validate(self, value) -> ValidationMessage:
+        if not isinstance(value, str):
+            return False, f"type: {type(value)} must be <str>"
+        return True, None
+
+    def _pack(self, fp: typing.BinaryIO, value=None):
+        if value is None:
+            value = self._value
+        _write_string(fp, value)
+
     @classmethod
-    def validate(cls, value):
-        return isinstance(value, str)
+    def _unpack(cls, fp: typing.BinaryIO) -> "Str":
+        val = _read_string(fp)
+        return cls(value=val)
 
-class U8(Field):
 
-    _type = BareType.U8
-    _default = 0
+class Data(Field):
+    _type = BareType.Data
+    _default = bytes()
+
+    def validate(self, value) -> ValidationMessage:
+        try:
+            value.decode()
+            return True, None
+        except (UnicodeDecodeError, AttributeError):
+            return False, f"type: {type(value)} is not valid for Data type"
+
+    def _pack(self, fp: typing.BinaryIO, value=None):
+        if value is None:
+            value = self._value
+        length = len(value)
+        if isinstance(value, str):
+            value = value.encode("utf-8")
+        _write_varint(fp, val=length, signed=False)
+        fp.write(fp.write(struct.pack(f"<{len(value)}s", value)))
 
     @classmethod
+    def _unpack(cls, fp: typing.BinaryIO) -> "Data":
+        length = _read_varint(fp, signed=False)
+        val = struct.unpack("<{length}s", fp)[0]
+        return cls(value=val)
+
+
+class DataFixed(Field):
+    _type = BareType.DataFixed
+    _length = 0
+    _default = bytes(_length)
+
+    def __init__(self, length=0, value=None):
+        if length == 0 and self.__class__._length > 0:
+            self._length = self.__class__._length
+        else:
+            self._length = length
+        if value is not None:
+            self._value = value
+        else:
+            self._value = self.__class__._default
+
+    def validate(self, value) -> ValidationMessage:
+        try:
+            value.decode()
+        except (UnicodeDecodeError, AttributeError):
+            return False, f"type: {type(value)} is not valid for Data type"
+        if len(value) != self._length:
+            return (
+                False,
+                f"Length of data {len(value)} not equal to fixed length {self._length}",
+            )
+
+    def _pack(self, fp: typing.BinaryIO, value=None):
+        if value is None:
+            value = self._value
+        fp.write(struct.pack(f"<{self._length}s", value))
+
+    @classmethod
+    def _unpack(cls, fp: typing.BinaryIO, length=None) -> "DataFixed":
+        if length is None:
+            length = cls._length
+        val = struct.unpack(f"<{length}s", fp)[0]
+        return cls(value=val)
+
+class Enum(UInt):
+
+    def __init__(self, enum, *args, **kwargs):
+        self._enum = enum
+        super().__init__(*args, **kwargs)
+
     def validate(self, value):
-        return isinstance(value, int) and value <= 255
+        if not isinstance(value, int):
+            return False, f"type: {type(value)} is not valid for Enum, must be <int>"
+        if value < 0:
+            return False, f"value is not a valid value for Enum {self.__class__.__name__}"
+        values = set(item.value for item in self._enum.__members__.values())
+        if value not in values:
+            return False, f"value {value} is not a valid Enum type for {self.__class__.__name__}"
+        return True, None
