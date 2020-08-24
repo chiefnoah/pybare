@@ -31,6 +31,9 @@ class Simple(Field):
 
 
 class U8(Simple):
+    """
+    An unsigned 8bit integer
+    """
 
     _type = BareType.U8
     _default = 0
@@ -320,6 +323,13 @@ class DataFixed(Field):
     _default = bytes(_length)
 
     def __init__(self, length=0, value=None):
+        """Fixed length raw data type
+
+        :param int length: number in bytes this type should represent.
+            Either this arg must be set, or this class subclassed and the
+            _length class field overriden
+        :param bytes value: an optional value to set
+        """
         if length == 0 and self.__class__._length > 0:
             self._length = self.__class__._length
         else:
@@ -357,7 +367,7 @@ class Enum(UInt):
         """Enum defines a BARE enum type
 
         Validate checks whether the provided value is an `int` and a valid enum member
-        :param enum (`enum.Enum`): a standard `Enum` type. Values for enum members *must* be positive ints
+        :param Enum enum: a standard `Enum` type. Values for enum members *must* be positive ints
         """
         self._enum = enum
         super().__init__(*args, **kwargs)

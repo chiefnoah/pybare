@@ -122,6 +122,9 @@ class Field(ABC):
 
     @property
     def value(self):
+        """value accesses the wrapped value for this instance
+
+        """
         return self._value
 
     @value.setter
@@ -139,6 +142,11 @@ class Field(ABC):
         pass
 
     def pack(self, fp=None) -> typing.Optional[bytes]:
+        """pack encodes this structure and all nested structures using the BARE format
+        if the optional `fp` is specified, this function does not return anything
+        :param typing.BinaryIO fp: an optional io stream to write bytes to
+        :returns: encoded bytes if fp is None
+        """
         buffered = False
         if not fp:
             fp = io.BytesIO()
@@ -148,6 +156,9 @@ class Field(ABC):
             return fp.getvalue()
 
     def unpack(self, fp: typing.BinaryIO):
+        """unpacks bytes from fp into an instance of this class
+
+        """
         # If it's a bytes-like, wrap it in a io buffer
         if hasattr(fp, "decode"):
             fp = io.BytesIO(fp)
@@ -212,7 +223,9 @@ class Struct(ABC):
     @classmethod
     def unpack(cls, data: typing.Union[typing.BinaryIO, bytes]):
         """
-        unpack deserializes data into a type. If
+        unpacks data into an instance of this struct
+        :param bytes|BinaryIO data: bytes or byte stream to read values from
+        :returns: an instance of this class with populated fields
         """
         if hasattr(data, "decode"):
             fp = io.BytesIO(data)
