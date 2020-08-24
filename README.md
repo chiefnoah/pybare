@@ -10,6 +10,10 @@ format for Python 3.6+
 pybare is a general purpose library for strongly typed primitives in Python that
 supports serializing to and from BARE messages.
 
+```shell
+pip install pybare
+```
+
 ## Goals
 
 * Provide a declarative structure for defining types
