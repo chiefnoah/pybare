@@ -1,6 +1,5 @@
 # PyBARE
-[![builds.sr.ht
-status](https://builds.sr.ht/~chiefnoah/pybare/commits/.build.yml.svg)](https://builds.sr.ht/~chiefnoah/pybare/commits/.build.yml?)
+[![builds.sr.ht status](https://builds.sr.ht/~chiefnoah/pybare.svg)](https://builds.sr.ht/~chiefnoah/pybare?)
 
 An declarative implementation of the [BARE](https://baremessages.org/) message
 format for Python 3.6+
