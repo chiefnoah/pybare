@@ -16,6 +16,7 @@ class ValidationError(ValueError):
     ValidationError is an error raised by a `Field` type when the `validate` class function
     determines a given value is 'out-of-spec'.
     """
+
     pass
 
 
@@ -110,7 +111,7 @@ class Field(ABC):
         Checks whether a give value is valid for the Field's data type. Returns a tuple of a boolean
         and an optional message for why
         """
-        return self.__class__._default == None  # This is valid for BareType.Void
+        return self.__class__._default == None, None  # This is valid for BareType.Void
 
     @property
     def valid(self) -> typing.Tuple[bool, str]:
