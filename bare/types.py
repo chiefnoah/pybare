@@ -296,11 +296,9 @@ class Data(Field):
     _default = bytes()
 
     def validate(self, value) -> ValidationMessage:
-        try:
-            value.decode()
-            return True, None
-        except (UnicodeDecodeError, AttributeError):
-            return False, f"type: {type(value)} is not valid for Data type"
+        if not isinstance(value, bytes):
+            return False, f"Fixed length raw data must be type '{bytes}' not '{type(value)}.'"
+        return True, None
 
     def _pack(self, fp: typing.BinaryIO, value=None):
         if value is None:
@@ -309,7 +307,7 @@ class Data(Field):
         if isinstance(value, str):
             value = value.encode("utf-8")
         _write_varint(fp, val=length, signed=False)
-        fp.write(fp.write(struct.pack(f"<{len(value)}s", value)))
+        fp.write(struct.pack(f"<{len(value)}s", value))
 
     def _unpack(self, fp: typing.BinaryIO) -> "Data":
         length = _read_varint(fp, signed=False)
@@ -340,15 +338,16 @@ class DataFixed(Field):
             self._value = self.__class__._default
 
     def validate(self, value) -> ValidationMessage:
-        try:
-            value.decode()
-        except (UnicodeDecodeError, AttributeError):
-            return False, f"type: {type(value)} is not valid for Data type"
+        if not isinstance(value, bytes):
+            return False, f"Fixed length raw data must be type '{bytes}' not '{type(value)}.'"
+        
         if len(value) != self._length:
             return (
                 False,
                 f"Length of data {len(value)} not equal to fixed length {self._length}",
             )
+        
+        return True, None
 
     def _pack(self, fp: typing.BinaryIO, value=None):
         if value is None:
