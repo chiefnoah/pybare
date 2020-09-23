@@ -311,7 +311,7 @@ class Data(Field):
 
     def _unpack(self, fp: typing.BinaryIO) -> "Data":
         length = _read_varint(fp, signed=False)
-        val = struct.unpack("<{length}s", fp)[0]
+        val = fp.read(length)
         return self.__class__(value=val)
 
 
@@ -357,7 +357,7 @@ class DataFixed(Field):
     def _unpack(self, fp: typing.BinaryIO, length=None) -> "DataFixed":
         if length is None:
             length = self._length
-        val = struct.unpack(f"<{length}s", fp)[0]
+        val = fp.read(length)
         return self.__class__(value=val)
 
 
