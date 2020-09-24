@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="pybare", # Replace with your own username
-    version="0.1.0",
+    version="0.1.1",
     author="Noah Pederson",
     author_email="noah@packetlost.dev",
     description="A declarative implementation of BARE for Python",
